@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # Sobreescribe explicitamente lo que venga en backend/.env: dentro de la red
+      # de Docker Compose los servicios se resuelven por NOMBRE, no por localhost.
+      # REDIS_URL=redis://localhost:6379/0 desde dentro de este contenedor apunta
+      # al propio backend, no al contenedor redis -> conexion rechazada
+      # silenciosamente (bug real, detectado y corregido con medicion: 1.455s vs
+      # 0.017s de latencia, ver historial del proyecto).
+      - REDIS_URL=redis://redis:6379/0
+      - "DATABASE_URL=postgresql+asyncpg://cyberscan:${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en tu .env de la raiz}@postgres:5432/cyberscan"
+      - RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      - postgres
+      - redis
+      - rabbitmq
+    networks:
+      - cyberscan-net
+
+  frontend:
+    image: nginx:alpine
+    volumes:
+      - ./frontend:/usr/share/nginx/html:ro
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+    networks:
+      - cyberscan-net
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: cyberscan
+      POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:?Define POSTGRES_PASSWORD en tu archivo .env de la raiz del proyecto - ver .env.example}"
+      POSTGRES_DB: cyberscan
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - cyberscan-net
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - cyberscan-net
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - cyberscan-net
+
+  grafana:
+    image: grafana/grafana-oss:11.2.0
+    ports:
+      - "3001:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    networks:
+      - cyberscan-net
+
+  prometheus:
+    image: prom/prometheus:v2.55.0
+    volumes:
+      - ./infra/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks:
+      - cyberscan-net
+
+volumes:
+  postgres_data:
+  grafana_data:
+
+networks:
+  cyberscan-net:
+    driver: bridge

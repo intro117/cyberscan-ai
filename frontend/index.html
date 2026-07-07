@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CyberScan AI - Auditoria de seguridad en 30 segundos</title>
+<script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen">
+  <div class="max-w-3xl mx-auto px-6 py-16">
+    <header class="text-center mb-10">
+      <h1 class="text-4xl font-bold tracking-tight">CyberScan AI</h1>
+      <p class="text-gray-400 mt-2">Descubre tu riesgo de seguridad en menos de 30 segundos.</p>
+    </header>
+
+    <div class="flex gap-4 mb-6 border-b border-gray-800">
+      <button id="tab-domain" class="tab-btn px-4 py-2 border-b-2 border-blue-500 font-semibold">Dominio</button>
+      <button id="tab-email" class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-400">Correo (brechas)</button>
+      <button id="tab-phone" class="tab-btn px-4 py-2 border-b-2 border-transparent text-gray-400">Telefono</button>
+    </div>
+
+    <form id="scan-form" class="flex gap-2 mb-8">
+      <input id="domain-input" type="text" placeholder="tudominio.com"
+        class="flex-1 rounded-lg bg-gray-900 border border-gray-800 px-4 py-3 outline-none focus:border-blue-500"
+        required />
+      <button type="submit" id="scan-btn"
+        class="rounded-lg bg-blue-600 hover:bg-blue-500 px-6 py-3 font-semibold transition">
+        Analizar
+      </button>
+    </form>
+
+    <form id="email-form" class="hidden flex gap-2 mb-8">
+      <input id="email-input" type="email" placeholder="correo@ejemplo.com"
+        class="flex-1 rounded-lg bg-gray-900 border border-gray-800 px-4 py-3 outline-none focus:border-blue-500"
+        required />
+      <button type="submit" id="email-btn"
+        class="rounded-lg bg-blue-600 hover:bg-blue-500 px-6 py-3 font-semibold transition">
+        Verificar
+      </button>
+    </form>
+
+    <form id="phone-form" class="hidden flex gap-2 mb-8">
+      <input id="phone-input" type="tel" placeholder="+525512345678"
+        class="flex-1 rounded-lg bg-gray-900 border border-gray-800 px-4 py-3 outline-none focus:border-blue-500"
+        required />
+      <button type="submit" id="phone-btn"
+        class="rounded-lg bg-blue-600 hover:bg-blue-500 px-6 py-3 font-semibold transition">
+        Verificar
+      </button>
+    </form>
+
+    <div id="loading" class="hidden text-center text-gray-400 py-10">
+      Escaneando headers, TLS, DNS y subdominios...
+    </div>
+
+    <div id="results" class="hidden">
+      <div class="flex items-center justify-between bg-gray-900 rounded-xl p-6 mb-6">
+        <div>
+          <p class="text-gray-400 text-sm">Security Score</p>
+          <p id="score" class="text-5xl font-bold"></p>
+        </div>
+        <div class="text-right">
+          <p class="text-gray-400 text-sm">Grado</p>
+          <p id="grade" class="text-3xl font-bold"></p>
+        </div>
+      </div>
+
+      <div class="flex justify-end mb-4">
+        <a id="pdf-link" href="#" class="text-sm text-blue-400 hover:underline">Descargar reporte PDF</a>
+      </div>
+
+      <div id="findings" class="space-y-2"></div>
+    </div>
+
+    <div id="error" class="hidden bg-red-950 border border-red-800 rounded-lg p-4 text-red-300"></div>
+  </div>
+
+<script>
+const API_BASE = window.CYBERSCAN_API_BASE || "http://localhost:8000";
+
+const severityColor = {
+  critical: "bg-red-950 border-red-800 text-red-300",
+  high: "bg-orange-950 border-orange-800 text-orange-300",
+  medium: "bg-yellow-950 border-yellow-800 text-yellow-300",
+  low: "bg-blue-950 border-blue-800 text-blue-300",
+  info: "bg-gray-800 border-gray-700 text-gray-300",
+  ok: "bg-green-950 border-green-800 text-green-300",
+};
+
+const scoreColor = (score) => {
+  if (score >= 90) return "text-green-400";
+  if (score >= 75) return "text-lime-400";
+  if (score >= 60) return "text-yellow-400";
+  if (score >= 40) return "text-orange-400";
+  return "text-red-400";
+};
+
+const tabs = { domain: document.getElementById("tab-domain"), email: document.getElementById("tab-email"), phone: document.getElementById("tab-phone") };
+const forms = { domain: document.getElementById("scan-form"), email: document.getElementById("email-form"), phone: document.getElementById("phone-form") };
+
+function switchTab(active) {
+  for (const key in tabs) {
+    tabs[key].classList.toggle("border-blue-500", key === active);
+    tabs[key].classList.toggle("text-gray-400", key !== active);
+    tabs[key].classList.toggle("border-transparent", key !== active);
+    forms[key].classList.toggle("hidden", key !== active);
+  }
+  document.getElementById("results").classList.add("hidden");
+  document.getElementById("error").classList.add("hidden");
+}
+tabs.domain.addEventListener("click", () => switchTab("domain"));
+tabs.email.addEventListener("click", () => switchTab("email"));
+tabs.phone.addEventListener("click", () => switchTab("phone"));
+
+async function runCheck(endpoint, body, btn) {
+  const loading = document.getElementById("loading");
+  const results = document.getElementById("results");
+  const errorBox = document.getElementById("error");
+  results.classList.add("hidden");
+  errorBox.classList.add("hidden");
+  loading.classList.remove("hidden");
+  btn.disabled = true;
+  try {
+    const resp = await fetch(`${API_BASE}${endpoint}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: "Error desconocido" }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+    const data = await resp.json();
+    renderResults(data, endpoint === "/api/v1/scan");
+  } catch (err) {
+    errorBox.textContent = `No se pudo completar la verificacion: ${err.message}`;
+    errorBox.classList.remove("hidden");
+  } finally {
+    loading.classList.add("hidden");
+    btn.disabled = false;
+  }
+}
+
+document.getElementById("email-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const email = document.getElementById("email-input").value.trim();
+  runCheck("/api/v1/phase2/email", { email }, document.getElementById("email-btn"));
+});
+
+document.getElementById("phone-form").addEventListener("submit", (e) => {
+  e.preventDefault();
+  const phone = document.getElementById("phone-input").value.trim();
+  runCheck("/api/v1/phase2/phone", { phone }, document.getElementById("phone-btn"));
+});
+
+document.getElementById("scan-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const domain = document.getElementById("domain-input").value.trim();
+  const btn = document.getElementById("scan-btn");
+  const loading = document.getElementById("loading");
+  const results = document.getElementById("results");
+  const errorBox = document.getElementById("error");
+
+  results.classList.add("hidden");
+  errorBox.classList.add("hidden");
+  loading.classList.remove("hidden");
+  btn.disabled = true;
+
+  try {
+    const resp = await fetch(`${API_BASE}/api/v1/scan`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ domain }),
+    });
+
+    if (!resp.ok) {
+      const err = await resp.json().catch(() => ({ detail: "Error desconocido" }));
+      throw new Error(err.detail || `HTTP ${resp.status}`);
+    }
+
+    const data = await resp.json();
+    renderResults(data, true);
+  } catch (err) {
+    errorBox.textContent = `No se pudo completar el escaneo: ${err.message}`;
+    errorBox.classList.remove("hidden");
+  } finally {
+    loading.classList.add("hidden");
+    btn.disabled = false;
+  }
+});
+
+function renderResults(data, isDomain) {
+  document.getElementById("score").textContent = data.score;
+  document.getElementById("score").className = `text-5xl font-bold ${scoreColor(data.score)}`;
+  document.getElementById("grade").textContent = data.grade;
+
+  const pdfLink = document.getElementById("pdf-link");
+  if (isDomain) {
+    pdfLink.href = `${API_BASE}/api/v1/scan/${encodeURIComponent(data.domain)}/report.pdf`;
+    pdfLink.classList.remove("hidden");
+  } else {
+    pdfLink.classList.add("hidden");
+  }
+
+  const container = document.getElementById("findings");
+  container.innerHTML = "";
+  data.findings.forEach((f) => {
+    const div = document.createElement("div");
+    div.className = `border rounded-lg p-4 ${severityColor[f.severity] || severityColor.info}`;
+    div.innerHTML = `
+      <div class="flex justify-between text-sm font-semibold mb-1">
+        <span>${f.module.toUpperCase()} · ${f.check}</span>
+        <span>${f.passed ? "✓ OK" : "✗ " + f.severity.toUpperCase()}</span>
+      </div>
+      <p class="text-sm opacity-90">${f.detail}</p>
+      ${f.remediation ? `<p class="text-sm mt-1 opacity-70">Solucion: ${f.remediation}</p>` : ""}
+    `;
+    container.appendChild(div);
+  });
+
+  document.getElementById("results").classList.remove("hidden");
+}
+</script>
+</body>
+</html>
