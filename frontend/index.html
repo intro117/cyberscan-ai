@@ -76,7 +76,12 @@
   </div>
 
 <script>
-const API_BASE = window.CYBERSCAN_API_BASE || "http://localhost:8000";
+// EDITA ESTA LINEA antes de desplegar a Vercel: reemplaza por tu URL real de Render
+// (algo como "https://cyberscan-ai-backend.onrender.com", SIN slash final).
+// Para desarrollo local con `docker compose up`, deja el fallback en localhost.
+const RENDER_BACKEND_URL = "REPLACE_ME_RENDER_URL"; // <-- editar aqui
+const API_BASE = window.CYBERSCAN_API_BASE
+  || (RENDER_BACKEND_URL !== "REPLACE_ME_RENDER_URL" ? RENDER_BACKEND_URL : "http://localhost:8000");
 
 const severityColor = {
   critical: "bg-red-950 border-red-800 text-red-300",

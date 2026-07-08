@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: cyberscan-ai-backend
+    runtime: docker
+    plan: free
+    rootDir: backend
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ENVIRONMENT
+        value: production
+      - key: DEBUG
+        value: "false"
+      - key: REDIS_URL
+        sync: false  # Render te pedira pegar esto manualmente (viene de Upstash, es secreto)
+      - key: ALLOWED_ORIGINS
+        sync: false  # Pegar la URL de Vercel aqui una vez que exista (paso posterior)
+      - key: RATE_LIMIT_PER_MINUTE
+        value: "10"
+      - key: HIBP_API_KEY
+        value: REPLACE_ME_HIBP_API_KEY
+      - key: NUMVERIFY_API_KEY
+        sync: false  # Opcional: pegar tu key gratuita de numverify.com si quieres el modulo de telefono
