@@ -78,6 +78,29 @@ async def test_phone_voip_flagged_as_risk_not_confirmed_spam():
 
 
 @pytest.mark.asyncio
+@respx.mock
+async def test_phone_numverify_quota_exceeded_not_misreported_as_invalid():
+    """
+    Regresion test del bug real detectado antes de exposicion publica: cuando
+    NumVerify agota la cuota gratuita, responde HTTP 200 con success:false,
+    NO con 404/429. Sin este fix, se reportaria falsamente como "numero invalido".
+    """
+    class _FakeSettings:
+        numverify_api_key = "real_key_configured"
+    with patch("app.scanners.phone_check.get_settings", return_value=_FakeSettings()):
+        respx.get("http://apilayer.net/api/validate").mock(
+            return_value=httpx.Response(200, json={
+                "success": False,
+                "error": {"code": 104, "info": "Your monthly usage limit has been reached"},
+            })
+        )
+        findings = await check_phone_number("+525512345678")
+    assert findings[0].check == "NumVerify Quota/Error"
+    assert "104" in findings[0].detail
+    assert "cuota mensual" in findings[0].detail
+
+
+@pytest.mark.asyncio
 async def test_phone_no_api_key_configured():
     class _NoKeySettings:
         numverify_api_key = "REPLACE_ME_NUMVERIFY_API_KEY"

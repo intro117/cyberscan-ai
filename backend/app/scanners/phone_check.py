@@ -68,6 +68,20 @@ async def check_phone_number(phone: str) -> list[Finding]:
             weight=0,
         )]
 
+    if data.get("success") is False:
+        error_info = data.get("error", {})
+        error_code = error_info.get("code", "desconocido")
+        error_msg = error_info.get("info", "Error desconocido de NumVerify")
+        return [Finding(
+            module="phone_check", check="NumVerify Quota/Error", severity=Severity.INFO, passed=False,
+            detail=f"NumVerify respondio con un error (codigo {error_code}): {error_msg}. "
+                   "Si el codigo es 104, la cuota mensual gratuita (100 requests) se agoto - "
+                   "esto NO significa que el numero sea invalido, es un limite del servicio.",
+            remediation="Espera al siguiente ciclo mensual de NumVerify o considera un plan de pago "
+                         "si el volumen de uso publico lo justifica.",
+            weight=0,
+        )]
+
     if not data.get("valid", False):
         return [Finding(
             module="phone_check", check="Format Validity", severity=Severity.MEDIUM, passed=False,
