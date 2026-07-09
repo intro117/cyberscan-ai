@@ -13,10 +13,20 @@ from app.honeypot import register_honeypot_routes
 
 settings = get_settings()
 
+# En produccion (despliegue publico), se desactiva Swagger UI/ReDoc/OpenAPI schema.
+# No es una vulnerabilidad critica per se, pero regala gratis la estructura completa
+# de la API (endpoints, parametros, modelos) a cualquiera que la visite - informacion
+# de reconocimiento que no tiene motivo de estar publica en una instancia expuesta.
+# En local (development) se mantiene activo por conveniencia de desarrollo.
+_is_production = settings.environment == "production"
+
 app = FastAPI(
     title=settings.app_name,
     version="0.1.0",
     description="API de CyberScan AI - escaneo pasivo de postura de seguridad de un dominio.",
+    docs_url=None if _is_production else "/docs",
+    redoc_url=None if _is_production else "/redoc",
+    openapi_url=None if _is_production else "/openapi.json",
 )
 
 Instrumentator().instrument(app).expose(app, endpoint="/metrics")
